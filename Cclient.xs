@@ -40,10 +40,12 @@ static HV *stash_Cclient;	/* Mail::Cclient:: stash */
 static HV *stash_Address;	/* Mail::Cclient::Address stash */
 static HV *stash_Envelope;	/* Mail::Cclient::Envelope stash */
 static HV *stash_Body;		/* Mail::Cclient::Body stash */
+static HV *stash_Elt;		/* Mail::Cclient::Elt stash */
 static HV *callback;		/* Maps callback names to Perl SV callbacks */
 static SV *address_fields;	/* \%Mail::Cclient::Address::FIELDS */
 static SV *envelope_fields;	/* \%Mail::Cclient::Envelope::FIELDS */
 static SV *body_fields;		/* \%Mail::Cclient::Body::FIELDS */
+static SV *elt_fields;		/* \%Mail::Cclient::Elt::FIELDS */
 
 #include "patchlevel.h"
 #if PATCHLEVEL < 4
@@ -165,6 +167,65 @@ make_envelope(ENVELOPE *envelope)
     return sv_bless(newRV_noinc((SV*)e), stash_Envelope);
 }
 
+/*
+ * make_elt turns a C-client MESSAGECACHE ("elt") into a Perl list
+ * ref of the form
+ *     [keyref, msgno, date, flags, rfc822_size]
+ * blessed into Mail::Cclient::Elt. Date contains the internal date
+ * information which held in separate bit fields in the underlying
+ * C structure but which is presented in Perl as a string in the form
+ *     yyyy-mm-dd hh:mm:ss [+-]hhmm
+ * The flags field is a ref to a list of strings such as
+ * \Deleted, \Flagged, \Answered etc (as per RFC 2060) plus
+ * user-defined flag names set via the Mail::Cclient setflag method.
+ * %Mail::Cclient::Envelope::FIELDS for 5.005 pseudo-hash access
+ * to the object. keyref is a ref to %Mail::Cclient::Elt::FIELDS for
+ * 5.005 pseudo-hash access to the object.
+ */
+static SV *
+make_elt(MAILSTREAM *stream, MESSAGECACHE *elt)
+{
+    AV *av = newAV();
+    AV *flags = newAV();
+    char datebuf[26]; /* to fit "yyyy-mm-dd hh:mm:ss [+-]hhmm\0" */
+    int i;
+    
+    av_push(av, SvREFCNT_inc(elt_fields));
+    av_push(av, newSViv(elt->msgno));
+    /*
+     * year field is OK until 2098 since it's an offset from BASEYEAR
+     * which in newer cclients is 1970 (was 1969) and elt->year is a
+     * bitfield with 7 bits.
+     */
+    sprintf(datebuf, "%04d-%02d-%02d %02d:%02d:%02d %c%02d%02d",
+	    BASEYEAR + elt->year, elt->month, elt->day, elt->hours,
+	    elt->minutes, elt->seconds,
+	    elt->zoccident ? '-' : '+', elt->zhours, elt->zminutes);
+    av_push(av, newSVpv(datebuf, sizeof(datebuf)));
+    if (elt->seen)
+	av_push(flags, newSVpv("\\Seen", 5));
+    if (elt->deleted)
+	av_push(flags, newSVpv("\\Deleted", 8));
+    if (elt->flagged)
+	av_push(flags, newSVpv("\\Flagged", 8));
+    if (elt->answered)
+	av_push(flags, newSVpv("\\Answered", 9));
+    if (elt->draft)
+	av_push(flags, newSVpv("\\Draft", 6));
+    if (elt->valid)
+	av_push(flags, newSVpv("\\Valid", 6));
+    if (elt->recent)
+	av_push(flags, newSVpv("\\Recent", 7));
+    if (elt->searched)
+	av_push(flags, newSVpv("\\Searched", 9));
+    for (i = 0; i < NUSERFLAGS; i++)
+	if (elt->user_flags & (1 << i))
+	    av_push(flags, newSVpv(stream->user_flags[i], 0));
+    av_push(av, newRV_noinc((SV*)flags));
+    av_push(av, newSViv(elt->rfc822_size)); 
+    return sv_bless(newRV_noinc((SV*)av), stash_Elt);
+}
+
 static AV *
 stringlist_to_av(STRINGLIST *s)
 {
@@ -187,7 +248,6 @@ static STRINGLIST *av_to_stringlist(AV *av)
 	(*s)->text.size = len;
 	s = &(*s)->next;
 	svp++;
-	count--;
     }
     return rets;
 }
@@ -672,8 +732,16 @@ MODULE = Mail::Cclient	PACKAGE = Mail::Cclient	PREFIX = mailstream_
 #define mailstream_rdonly(stream) stream->rdonly
 #define mailstream_anonymous(stream) stream->anonymous
 #define mailstream_halfopen(stream) stream->halfopen
+#define mailstream_perm_seen(stream) stream->perm_seen
+#define mailstream_perm_deleted(stream) stream->perm_deleted
+#define mailstream_perm_flagged(stream) stream->perm_flagged
+#define mailstream_perm_answered(stream) stream->perm_answered
+#define mailstream_perm_draft(stream) stream->perm_draft
+#define mailstream_kwd_create(stream) stream->kwd_create
 #define mailstream_nmsgs(stream) stream->nmsgs
 #define mailstream_recent(stream) stream->recent
+#define mailstream_uid_validity(stream) stream->uid_validity
+#define mailstream_uid_last(stream) stream->uid_last
 
 char *
 mailstream_mailbox(stream)
@@ -699,6 +767,30 @@ unsigned int
 mailstream_halfopen(stream)
 	Mail::Cclient stream
 
+unsigned int
+mailstream_perm_seen(stream)
+	Mail::Cclient stream
+
+unsigned int
+mailstream_perm_deleted(stream)
+	Mail::Cclient stream
+
+unsigned int
+mailstream_perm_flagged(stream)
+	Mail::Cclient stream
+
+unsigned int
+mailstream_perm_answered(stream)
+	Mail::Cclient stream
+
+unsigned int
+mailstream_perm_draft(stream)
+	Mail::Cclient stream
+
+unsigned int
+mailstream_kwd_create(stream)
+	Mail::Cclient stream
+
 unsigned long
 mailstream_nmsgs(stream)
 	Mail::Cclient stream
@@ -706,6 +798,24 @@ mailstream_nmsgs(stream)
 unsigned long
 mailstream_recent(stream)
 	Mail::Cclient stream
+
+unsigned long
+mailstream_uid_validity(stream)
+	Mail::Cclient stream
+
+unsigned long
+mailstream_uid_last(stream)
+	Mail::Cclient stream
+
+void
+mailstream_perm_user_flags(stream)
+	Mail::Cclient stream
+    PREINIT:
+	int i;
+    PPCODE:
+	for (i = 0; i < NUSERFLAGS; i++)
+	    if (stream->perm_user_flags & (1 << i))
+		XPUSHs(sv_2mortal(newSVpv(stream->user_flags[i], 0)));
 
 MODULE = Mail::Cclient	PACKAGE = Mail::Cclient	PREFIX = mail_
 
@@ -879,6 +989,17 @@ unsigned long
 mail_uid(stream, msgno)
 	Mail::Cclient	stream
 	unsigned long	msgno
+
+void
+mail_elt(stream, msgno)
+	Mail::Cclient	stream
+	unsigned long	msgno
+    PREINIT:
+	MESSAGECACHE *elt;
+    PPCODE:
+	elt = mail_elt(stream, msgno);
+	XPUSHs(elt ? sv_2mortal(make_elt(stream, elt)) : &sv_undef);
+
  #
  # Message Status Manipulation Functions
  #
@@ -1039,10 +1160,13 @@ BOOT:
 	stash_Address = gv_stashpv("Mail::Cclient::Address", TRUE);
 	stash_Envelope = gv_stashpv("Mail::Cclient::Envelope", TRUE);
 	stash_Body = gv_stashpv("Mail::Cclient::Body", TRUE);
+	stash_Elt = gv_stashpv("Mail::Cclient::Elt", TRUE);
 	callback = perl_get_hv("Mail::Cclient::_callback", TRUE);
 	address_fields = newRV((SV*)perl_get_hv("Mail::Cclient::"
 						"Address::FIELDS", TRUE));
 	envelope_fields = newRV((SV*)perl_get_hv("Mail::Cclient::"
 						 "Envelope::FIELDS", TRUE));
-	body_fields = newRV((SV*)perl_get_hv("Mail::Cclient::"
-					     "Body::FIELDS", TRUE));
+	body_fields = newRV((SV*)perl_get_hv("Mail::Cclient::Body::FIELDS",
+					     TRUE));
+	elt_fields = newRV((SV*)perl_get_hv("Mail::Cclient::Elt::FIELDS",
+					    TRUE));

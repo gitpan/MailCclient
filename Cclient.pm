@@ -13,7 +13,7 @@ use Exporter;
 use strict;
 use vars qw($VERSION @ISA @EXPORT_OK %_callback);
 
-$VERSION = "0.2";
+$VERSION = "0.3";
 @ISA = qw(Exporter DynaLoader);
 @EXPORT_OK = qw(set_callback get_callback);
 
@@ -30,18 +30,13 @@ Mail::Cclient - Mailbox access via the c-client library API
     $hdr = $c->fetchheader(MSGNO [, FLAG ...]);
     $text = $c->fetchtext(MSGNO [, FLAG ..i]);
     $text = $c->fetchbody(MSGNO, SECTION, [, FLAG ...]);
+    $elt = $c->elt(MSGNO);
 
     $c->create(MAILBOX);
     $c->delete(MAILBOX);
     $c->rename(OLDNAME, NEWNAME);
 
     $nmsgs = $c->nmsgs;
-    $mailbox = $c->mailbox;
-    $use = $c->use;
-    $rdonly = $c->rdonly;
-    $anonymous = $c->anonymous;
-    $halfopen = $c->halfopen;
-    $recent = $c->recent;
 
     Mail::Cclient::set_callback KEY => CODE, ...
     $c->list(REF, PAT);			# uses "list" callback
@@ -196,15 +191,45 @@ Returns the number of messages in the mailbox.
 
 Returns the mailbox name.
 
-=item use
-
 =item rdonly
+
+Stream is open read-only.
 
 =item anonymous
 
+Stream is open with anonymous access.
+
 =item halfopen
 
+Stream is half-open; it can be reopened or used for functions that
+don't need a open mailbox such as $c->create() but no message data
+can be fetched.
+
+=item perm_seen, perm_deleted, perm_flagged, perm_answered, perm_draft
+
+The relevant flag can be set permanently.
+
+=item kwd_create
+
+New user flags can be created by referencing them in setflag or
+clearflag method calls. This can change during a session (e.g. if
+there is a limit).
+
+=item perm_user_flags
+
+Returns a list of the user flags which can be set permanently.
+
 =item recent
+
+Number of recent messages in current mailbox.
+
+=item uid_validity
+
+The UID validity value.
+
+=item uid_last
+
+The highest currently assigned UID in the current mailbox.
 
 =back
 
@@ -270,6 +295,16 @@ and so on. If section "3" is multipart/mixed itself, then it has
 subsections "3.1", "3.2" and so on. The "peek" and "internal" flags
 may also be passed and have the same effect as in C<fetchtext>
 documented above.
+
+=item elt(MSGNO)
+
+This returns the MESSAGECACHE (commonly known as "elt") information
+associated with message MSGNO as an object in class Mail::Cclient::Elt.
+See below for what such an object contains. B<Important note>: for
+this method to be valid, a previous C<fetchstructure> or C<fetchflags>
+B<must> have been called on this message. Otherwise, you are into the
+realms of undefined behaviour and at the mercy of the underlying
+c-client library.
 
 =back
 
@@ -484,14 +519,14 @@ key is not created at all.
 
 =back
 
-=head1 ENVELOPES, BODIES AND ADDRESSES
+=head1 ENVELOPES, BODIES, ADDRESSES and ELTS
 
-The results of the C<fetchstructure> method involve objects in
-the classes C<Mail::Cclient::Envelope>, C<Mail::Cclient::Body>,
-and C<Mail::Cclient::Address>. These will be referred to as
-Envelope, Body and Address objects respectively. These objects
-are all "read-only" and only have methods for picking out
-particular fields.
+The results of the C<fetchstructure> and C<elt> methods involve
+objects in the classes C<Mail::Cclient::Envelope>,
+C<Mail::Cclient::Body>, C<Mail::Cclient::Address> and C<Mail::Cclient::Elt>.
+These will be referred to as Envelope, Body, Address and Elt objects
+respectively. These objects are all "read-only" and only have methods
+for picking out particular fields.
 
 =head2 Address objects
 
@@ -607,6 +642,37 @@ The MD5 checksum of the body.
 
 =back
 
+=head2 Elt objects
+
+These have fields containing flag information for a given message,
+along with internal date information and the RFC822 message size.
+
+=over
+
+=item msgno
+
+The message number.
+
+=item date
+
+This contains the internal date information (spread about a series of
+bitfields in the underlying c-client library C structure) in the form
+of a string:
+
+    yyyy-mm-dd hh:mm:ss [+-]hhmm
+
+=item flags
+
+A reference to a list of flags associated with the message. The flags
+are in the forms of their RFC2060 names (e.g. \Deleted, \Seen) for
+official flags and the user-chosen name for user-defined flags.
+
+=item rfc822_size
+
+The RFC822 size of the message.
+
+=back
+
 =head1 AUTHOR
 
 Malcolm Beattie, mbeattie@sable.ox.ac.uk.
@@ -689,6 +755,20 @@ Malcolm Beattie, mbeattie@sable.ox.ac.uk.
     sub newsgroups { shift->[13] }
     sub followup_to { shift->[14] }
     sub references { shift->[15] }
+}
+
+{
+    package Mail::Cclient::Elt;
+    use vars qw(%FIELDS);
+
+    %FIELDS = (msgno => 1,
+	       date => 2,
+	       flags => 3,
+	       rfc822_size => 4);
+    sub msgno { shift->[1] }
+    sub date { shift->[2] }
+    sub flags { shift->[3] }
+    sub rfc822_size { shift->[4] }
 }
 
 # Our own methods

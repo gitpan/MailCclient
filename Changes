@@ -1,0 +1,18 @@
+0.3
+1 Jun 1998
+
+* Created this Changes file
+
+* Removed duplicate decrement in av_to_stringlist which was
+  causing fetchheader to return only half the requested headers
+
+* Add support for elts
+
+0.2
+14 Apr 1998
+
+* Polished up for public release.
+
+0.1
+
+* First internal version

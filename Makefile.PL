@@ -1,6 +1,6 @@
 use ExtUtils::MakeMaker;
 
-$CCLIENT_DIR = "/usr/local/src/imap-4.1.BETA/c-client";
+$CCLIENT_DIR = "/usr/src/redhat/BUILD/imap-4.1.BETA/c-client";
 #
 # We want to turn Cclient.o (ours) plus the object files in the
 # $CCLIENT_DIR/c-client.a archive into a shared object. Simply
@@ -31,7 +31,7 @@ WriteMakefile(
     NAME		=> "Mail::Cclient",
     VERSION_FROM	=> "Cclient.pm",
     INC			=> "-I$CCLIENT_DIR",
-    LIBS		=> [""],
+    LIBS		=> ["-lpam"],
     OBJECT		=> "Cclient.o @objects"
 );
 

@@ -1,4 +1,4 @@
-		     Perl Mail::Cclient module, Version 0.2
+		     Perl Mail::Cclient module, Version 0.3
 
 		      Copyright (c) 1998, Malcolm Beattie
 
@@ -34,7 +34,8 @@ INSTALLATION
 
 Install the University of Washington imapd source distribution
 (e.g. 4.1.BETA) and build at least the c-client library
-(c-client/c-client.a).
+(c-client/c-client.a). The home site for the UW imapd is
+    ftp://ftp.cac.washington.edu:/mail/imap-4.1.BETA.tar.Z
 
 Edit Makefile.PL and change the definition of $CCLIENT_DIR to be
 the pathname of the c-client directory (i.e. the pathname will end
@@ -77,4 +78,4 @@ which documents the underlying c-client library. However, that
 documentation is at odds with the actual code in a few places.
 
 Malcolm Beattie
-14 April 1998
+1 June 1998
